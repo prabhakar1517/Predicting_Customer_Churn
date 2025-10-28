@@ -1,79 +1,113 @@
 import streamlit as st
 import pandas as pd
-import pickle
 import numpy as np
+import pickle
 
-# -------------------------------
-# 1️⃣ Load Model and Encoders
-# -------------------------------
+# ------------------------------
+# Load Model and Encoders
+# ------------------------------
 @st.cache_resource
 def load_model_and_encoders():
-    model = pickle.load(open("model.pkl", "rb"))
-    encoders = pickle.load(open("encoders.pkl", "rb"))
-    return model, encoders
+    try:
+        model = pickle.load(open("model.pkl", "rb"))
+        encoders = pickle.load(open("encoders.pkl", "rb"))
+        return model, encoders
+    except Exception as e:
+        st.error(f"Error loading model or encoders: {e}")
+        return None, None
 
 model, encoders = load_model_and_encoders()
 
-# -------------------------------
-# 2️⃣ Streamlit UI
-# -------------------------------
-st.title("🔮 Customer Churn Prediction App")
-st.write("Predict whether a customer will churn using a trained ML model.")
+st.set_page_config(page_title="Customer Churn Prediction", layout="centered")
 
-# Example categorical & numeric inputs
-# (Adjust names to match your dataset)
+# ------------------------------
+# App Title
+# ------------------------------
+st.title("📊 Customer Churn Prediction App")
+st.write("This app predicts whether a customer is likely to **churn** or **stay** based on input features.")
+
+# ------------------------------
+# User Input Section
+# ------------------------------
+st.header("🔹 Enter Customer Details")
+
+# Example features (edit to match your dataset)
 gender = st.selectbox("Gender", ["Male", "Female"])
-contract = st.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"])
-tenure = st.number_input("Tenure (in months)", min_value=0)
-monthly_charges = st.number_input("Monthly Charges ($)", min_value=0.0)
+senior_citizen = st.selectbox("Senior Citizen", ["No", "Yes"])
+partner = st.selectbox("Partner", ["No", "Yes"])
+dependents = st.selectbox("Dependents", ["No", "Yes"])
+tenure = st.number_input("Tenure (in months)", min_value=0, max_value=100, value=12)
+phone_service = st.selectbox("Phone Service", ["Yes", "No"])
+multiple_lines = st.selectbox("Multiple Lines", ["No", "Yes", "No phone service"])
+internet_service = st.selectbox("Internet Service", ["DSL", "Fiber optic", "No"])
+online_security = st.selectbox("Online Security", ["Yes", "No", "No internet service"])
+online_backup = st.selectbox("Online Backup", ["Yes", "No", "No internet service"])
+tech_support = st.selectbox("Tech Support", ["Yes", "No", "No internet service"])
+contract = st.selectbox("Contract", ["Month-to-month", "One year", "Two year"])
+paperless_billing = st.selectbox("Paperless Billing", ["Yes", "No"])
+payment_method = st.selectbox("Payment Method", [
+    "Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"
+])
+monthly_charges = st.number_input("Monthly Charges", min_value=0.0, max_value=200.0, value=70.0)
+total_charges = st.number_input("Total Charges", min_value=0.0, max_value=10000.0, value=2000.0)
 
-# -------------------------------
-# 3️⃣ Prepare Input Data
-# -------------------------------
-input_data = pd.DataFrame({
+# ------------------------------
+# Prepare Input Data
+# ------------------------------
+input_dict = {
     "gender": [gender],
-    "Contract": [contract],
+    "SeniorCitizen": [1 if senior_citizen == "Yes" else 0],
+    "Partner": [partner],
+    "Dependents": [dependents],
     "tenure": [tenure],
-    "MonthlyCharges": [monthly_charges]
-})
+    "PhoneService": [phone_service],
+    "MultipleLines": [multiple_lines],
+    "InternetService": [internet_service],
+    "OnlineSecurity": [online_security],
+    "OnlineBackup": [online_backup],
+    "TechSupport": [tech_support],
+    "Contract": [contract],
+    "PaperlessBilling": [paperless_billing],
+    "PaymentMethod": [payment_method],
+    "MonthlyCharges": [monthly_charges],
+    "TotalCharges": [total_charges]
+}
 
-# -------------------------------
-# 4️⃣ Safe Encoding Function (No Crash)
-# -------------------------------
-def safe_transform(column_name, series, encoder):
-    known_classes = list(encoder.classes_)
-    transformed_values = []
-    for val in series:
-        if val not in known_classes:
-            st.warning(f"⚠️ '{val}' not seen in training for '{column_name}'. Using default '{known_classes[0]}'")
-            val = known_classes[0]
-        transformed_values.append(val)
-    # Ensure it's a numpy array before transforming
-    return encoder.transform(np.array(transformed_values))
+input_data = pd.DataFrame(input_dict)
 
-# Safely encode categorical columns
-for col in input_data.columns:
-    if col in encoders:
-        input_data[col] = safe_transform(col, input_data[col], encoders[col])
-
-# -------------------------------
-# 5️⃣ Prediction
-# -------------------------------
-if st.button("Predict Churn"):
+# ------------------------------
+# Encode Categorical Variables
+# ------------------------------
+if model is not None and encoders is not None:
     try:
-        prediction = model.predict(input_data)[0]
-        probability = model.predict_proba(input_data)[0][1]
-
-        st.subheader("🔍 Prediction Result:")
-        if prediction == 1:
-            st.error(f"⚠️ Customer is likely to churn. (Probability: {probability:.2f})")
-        else:
-            st.success(f"✅ Customer is not likely to churn. (Probability: {probability:.2f})")
+        for col in input_data.columns:
+            if col in encoders:
+                # Handle unseen categories safely
+                input_data[col] = input_data[col].map(lambda s: s if s in encoders[col].classes_ else encoders[col].classes_[0])
+                input_data[col] = encoders[col].transform(input_data[col])
     except Exception as e:
-        st.error(f"An error occurred: {e}")
+        st.error(f"Encoding error: {e}")
 
-# -------------------------------
-# 6️⃣ Footer
-# -------------------------------
+# ------------------------------
+# Predict Button
+# ------------------------------
+if st.button("🔮 Predict Churn"):
+    if model is None:
+        st.error("Model not loaded properly. Please check your files.")
+    else:
+        try:
+            prediction = model.predict(input_data)[0]
+            probability = model.predict_proba(input_data)[0][1]
+
+            if prediction == 1:
+                st.error(f"⚠️ The customer is likely to **CHURN**. (Probability: {probability:.2f})")
+            else:
+                st.success(f"✅ The customer is likely to **STAY**. (Probability: {probability:.2f})")
+        except Exception as e:
+            st.error(f"Prediction failed: {e}")
+
+# ------------------------------
+# Footer
+# ------------------------------
 st.markdown("---")
-st.caption("Built with ❤️ using Streamlit and Scikit-learn.")
+st.caption("Developed by Prabhakar Kumar | Churn Prediction Project")
